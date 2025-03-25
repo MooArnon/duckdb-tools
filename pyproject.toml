@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "duckdb-tools"
+version = "0.1.0"
+description = "A package for reading and writing partitioned data in DuckDB with S3 support."
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "boto3~=1.37.18",
+    "botocore~=1.37.18",
+    "duckdb~=1.2.1",
+    "polars~=1.26.0",
+    "pyarrow~=19.0.1",
+    "requests~=2.32.3",
+    "pytest~=8.3.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["duckdb_tools*"]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/duckdb-tools"
+Repository = "https://github.com/yourusername/duckdb-tools"

@@ -1,0 +1,21 @@
+name: Test Package Installation
+
+on: [push, pull_request]
+
+jobs:
+  test-install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install Dependencies
+        run: pip install pytest
+
+      - name: Run Installation Test
+        run: pytest -v tests/test_install.py
