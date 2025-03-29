@@ -129,6 +129,46 @@ class DuckDB:
     ##########################################################################
     
     @staticmethod
+    def delete_dynamo_record(
+            table_name: str, 
+            record_id: str, 
+            partition_key: str = "id",
+    ) -> None:
+        """
+        Deletes a record from a DynamoDB table by its primary key.
+
+        Parameters:
+        ----------
+        table_name : str
+            The name of the DynamoDB table.
+        record_id : str
+            The ID of the record to delete.
+        partition_key : str, optional
+            The name of the partition key (default is "id").
+        
+        Returns:
+        -------
+        dict:
+            The response from DynamoDB.
+        """
+        # Initialize DynamoDB client
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+
+        try:
+            response = table.delete_item(
+                Key={partition_key: record_id}
+            )
+            print(f"✅ Successfully deleted record with {partition_key} = {record_id}")
+            return response
+        except Exception as e:
+            print(f"❌ Error deleting record {record_id}: {str(e)}")
+            raise SystemError(e)
+            return None
+
+    ##########################################################################
+    
+    @staticmethod
     def read_partitioned_data_from_s3(
             s3_bucket: str, 
             s3_prefix: str, 
@@ -189,7 +229,6 @@ class DuckDB:
 
         return result
 
-    
     ##########################################################################
 
 ##############################################################################
