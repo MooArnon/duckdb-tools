@@ -2,6 +2,10 @@
 # Import #
 ##############################################################################
 
+from datetime import datetime, timezone
+import uuid
+from io import BytesIO
+
 import duckdb
 import polars as pl
 import boto3
@@ -126,6 +130,102 @@ class DuckDB:
             os.remove(local_file_path)
             os.remove(local_temp_path)
 
+    ##########################################################################
+    
+    @staticmethod
+    def append_partitioned_data_to_s3(
+            df: pl.DataFrame, 
+            s3_bucket: str, 
+            s3_prefix: str, 
+            partitions: list[str],
+    ):
+        """ Appends new data to existing partitioned Parquet files in S3 with unique filenames.
+
+        Parameters
+        ----------
+        df: pl.DataFrame
+            The input dataframe containing new data to append.
+        s3_bucket: str
+            The S3 bucket name.
+        s3_prefix: str
+            The prefix (folder path) inside the S3 bucket.
+        partitions: list[str]
+            List of column names to partition data by (e.g., ["asset", "scraped_date"]).
+        """
+
+        # Convert partition columns to string format
+        for col in partitions:
+            df = df.with_columns(pl.col(col).cast(pl.Utf8))
+
+        # Initialize S3 client
+        s3 = boto3.client("s3")
+
+        # Process each partition
+        partition_df = df.select(partitions).unique()
+        
+        # Generate a UUID for a temporary directory
+        dir_id = str(uuid.uuid4())
+        base_dir = f"/tmp/{dir_id}"
+        os.makedirs(base_dir, exist_ok=True)
+
+        for row in partition_df.iter_rows():
+            # Construct filter condition dynamically
+            condition = pl.fold(
+                acc=True,
+                function=lambda acc, expr: acc & expr,
+                exprs=[pl.col(col) == value for col, value in zip(partitions, row)]
+            )
+
+            # Filter the new data for this partition
+            partitioned_data = df.filter(condition)
+
+            # Construct the partitioned file paths
+            partition_path = "/".join([f"{col}={val}" for col, val in zip(partitions, row)])
+            
+            # Generate a nanosecond timestamp for uniqueness
+            timestamp_ns = datetime.utcnow().strftime("%Y%m%d_%H%M%S%f")  # Microseconds
+            timestamp_ns += str(datetime.utcnow().time().microsecond % 1000)  # Extra precision
+
+            # Define local and S3 file paths
+            local_temp_path = os.path.join(base_dir, f"temp_{'_'.join(map(str, row))}_{timestamp_ns}.parquet")
+            local_file_path = os.path.join(base_dir, f"binance_data_{'_'.join(map(str, row))}_{timestamp_ns}.parquet")
+            s3_file_path = f"{s3_prefix}/{partition_path}/binance_data_{timestamp_ns}.parquet"
+
+            # Try to fetch existing file from S3
+            existing_df = None
+            try:
+                obj = s3.get_object(Bucket=s3_bucket, Key=s3_file_path)
+                existing_parquet = obj["Body"].read()
+                existing_df = pl.read_parquet(BytesIO(existing_parquet))
+                print(f"🔄 Loaded existing data from s3://{s3_bucket}/{s3_file_path}")
+            except s3.exceptions.NoSuchKey:
+                print(f"⚠️ No existing file found at s3://{s3_bucket}/{s3_file_path}, creating new one.")
+
+            # Append new data to existing data if available
+            if existing_df is not None:
+                partitioned_data = pl.concat([existing_df, partitioned_data], how="vertical_relaxed")
+
+            # Write to temporary local file
+            partitioned_data.write_parquet(local_temp_path)
+
+            # Optimize with DuckDB
+            duckdb.sql(f"""
+                COPY (SELECT * FROM read_parquet('{local_temp_path}')) 
+                TO '{local_file_path}' 
+                (FORMAT PARQUET, COMPRESSION GZIP);
+            """)
+
+            # Upload back to S3 with the nanosecond timestamped filename
+            s3.upload_file(local_file_path, s3_bucket, s3_file_path)
+            print(f"✅ Uploaded (Appended) to s3://{s3_bucket}/{s3_file_path}")
+
+            # Cleanup local files
+            os.remove(local_temp_path)
+            os.remove(local_file_path)
+
+        # Remove temporary directory
+        os.rmdir(base_dir)
+        
     ##########################################################################
     
     @staticmethod
