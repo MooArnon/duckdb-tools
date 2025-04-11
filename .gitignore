@@ -176,4 +176,6 @@ set_env.sh
 
 env_test/
 
+delete_insert.py
+read.py
 local/

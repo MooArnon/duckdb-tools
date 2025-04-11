@@ -10,6 +10,7 @@ import duckdb
 import polars as pl
 import boto3
 import os
+import uuid
 
 ###########
 # Classes #
@@ -57,8 +58,27 @@ class DuckDB:
 
         # Process each partition
         partition_df = df.select(partitions).unique()
-        print(partition_df)
         
+        # Generate a UUID
+        dir_id = str(uuid.uuid4())
+        
+        base_dir = os.path.join(
+            "/tmp",
+            dir_id,
+        )
+        base_local_temp_path = os.path.join(
+            base_dir,
+            "local_tmp_path",
+        )
+        base_local_file_path = os.path.join(
+            base_dir,
+            "local_file_path",
+        )
+    
+        # Create the directory
+        os.makedirs(base_local_temp_path, exist_ok=True)
+        os.makedirs(base_local_file_path, exist_ok=True)
+
         for row in partition_df.iter_rows():
             # Construct filter condition dynamically
             condition = pl.fold(
@@ -72,8 +92,14 @@ class DuckDB:
 
             # Construct the partitioned file paths
             partition_path = "/".join([f"{col}={val}" for col, val in zip(partitions, row)])
-            local_temp_path = f"temp_{'_'.join(map(str, row))}.parquet"
-            local_file_path = f"binance_data_{'_'.join(map(str, row))}.parquet"
+            local_temp_path = os.path.join(
+                base_local_temp_path,
+                f"temp_{'_'.join(map(str, row))}.parquet"
+            )
+            local_file_path = os.path.join(
+                base_local_file_path,
+                f"binance_data_{'_'.join(map(str, row))}.parquet"
+            )
             s3_file_path = f"{s3_prefix}/{partition_path}/binance_data.parquet"
             s3_file_path_prefix = f"{s3_prefix}/{partition_path}/"
 
@@ -102,6 +128,7 @@ class DuckDB:
 
             # Cleanup local file
             os.remove(local_file_path)
+            os.remove(local_temp_path)
 
     ##########################################################################
     
@@ -294,6 +321,7 @@ class DuckDB:
             query = f"SELECT * FROM read_parquet('{s3_path}') WHERE {filter_conditions}"
         else:
             query = f"SELECT * FROM read_parquet('{s3_path}')"
+            # query = f"SELECT asset, max(open_time), min(open_time), count(1) FROM read_parquet('{s3_path}') group by 1"
 
         # Execute query
         print(f"📥 Querying: {query}")
