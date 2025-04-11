@@ -330,5 +330,93 @@ class DuckDB:
         return result
 
     ##########################################################################
+    
+    def query_data(
+            self,
+            sql_file: os.PathLike = None,
+            query: str = None,
+            additional_filter: dict = {},
+            region: str = "ap-southeast-1"
+    ) -> pl.DataFrame:
+        """ Reads partitioned data from S3 into DuckDB with optional filters.
+
+        Parameters
+        ----------
+        s3_bucket: str: 
+            The S3 bucket name.
+        s3_prefix: str: 
+            The prefix (folder path) inside the S3 bucket.
+        partition_lenght: int
+            Number of partition column,
+            select all data from table
+        partition_filter: str
+            Partition prefix
+            `asset=ADAUSDT/*`
+        filters: dict: 
+            Dictionary of filters (e.g., {"asset": "BTCUSDT", "open_date": "2025-03-24"}).
+
+        Returns
+        -------
+            polars.DataFrame: The retrieved data as a Polars DataFrame.
+        """
+
+        # Ensure DuckDB has HTTPFS for S3 access
+        duckdb.sql("INSTALL httpfs; LOAD httpfs;")
+        
+        # Set AWS credentials (ensure they are set correctly)
+        duckdb.sql(
+            f"""
+                SET s3_region = '{region}';
+                SET s3_access_key_id = '{os.environ['AWS_ACCESS_KEY_ID']}';
+                SET s3_secret_access_key = '{os.environ['AWS_SECRET_ACCESS_KEY']}';
+            """
+        )
+        if isinstance(query, str):
+            query = query
+        elif isinstance(sql_file, str):
+            query = self.read_query_file(file_path=sql_file, replace_condition_dict=additional_filter)
+        
+        # Execute query
+        print(f"📥 Querying: \n{query}")
+        result = duckdb.sql(query).pl()
+
+        return result
+    
+    ##########################################################################
+    
+    @staticmethod
+    def read_query_file(
+            file_path: str,
+            replace_condition_dict: dict = None,
+    ) -> str:
+        """Read .sql file and convert to text
+
+        Parameters
+        ----------
+        file_path : str
+            Target path
+        replace_condition_dict : dict
+            Keep the replacing dict
+            {
+                "VALUE_IN_SQL": "value-to-replace"
+            }
+
+        Returns
+        -------
+        list[str]
+            List of query as string
+        """
+        # Read the SQL file
+        with open(file_path, 'r') as sql_file:
+            sql_queries = sql_file.read()
+        
+        if replace_condition_dict:
+            for key, value in replace_condition_dict.items():
+                placeholder = f'<{key}>'
+                sql_queries = sql_queries.replace(placeholder, str(value))
+
+        return sql_queries
+    
+    ##########################################################################
 
 ##############################################################################
