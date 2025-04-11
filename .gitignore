@@ -175,3 +175,5 @@ cython_debug/
 set_env.sh
 
 env_test/
+
+local/
